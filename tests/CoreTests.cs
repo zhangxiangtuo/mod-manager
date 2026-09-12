@@ -30,6 +30,7 @@ namespace ModManager.Tests
                 TestDeployAndUndo();
                 TestModsModeDeploy();
                 TestImportFromGameMods();
+                TestBatchImport();
                 TestDeleteAndBackup();
                 TestManifest();
                 TestZipSlip();
@@ -326,6 +327,82 @@ namespace ModManager.Tests
             imported = ws.ImportFromGameMods(game, out skipped);
             Check(imported == 0 && skipped == 2, "import_is_idempotent", "重复导入=" + imported);
             Check(ws.Scan().Count == 2, "import_indexes_mods", "工作区 MOD 数不对");
+        }
+
+        /// <summary>批量导入：分类文件夹里的一堆 MOD、一堆压缩包都要能识别。</summary>
+        private static void TestBatchImport()
+        {
+            ModWorkspace ws = NewWorkspace("ws_batch");
+            string src = Path.Combine(_root, "import_src");
+            Write(Path.Combine(src, "宠物", "ModA", "manifest.json"), "{\"Name\":\"艾尔的马匹\",\"Version\":\"1.2.0\"}");
+            Write(Path.Combine(src, "宠物", "ModA", "ModA.dll"), "a");
+            Write(Path.Combine(src, "美化", "子分类", "ModB", "manifest.json"), "{\"Name\":\"美化包B\"}");
+            Write(Path.Combine(src, "美化", "子分类", "ModB", "content.json"), "[]");
+            Dictionary<string, string> zf = new Dictionary<string, string>();
+            zf["ModC/manifest.json"] = "{\"Name\":\"ModC\"}";
+            zf["ModC/ModC.dll"] = "c";
+            MakeZip(Path.Combine(src, "压缩包", "ModC.zip"), zf);
+
+            ModWorkspace.BatchPlan plan = ws.ScanBatch(src);
+            Check(plan.Entries.Count == 3, "batch_scan_finds_all", "找到=" + plan.Entries.Count);
+            Check(plan.ToInstallCount == 3, "batch_all_are_new", "待装=" + plan.ToInstallCount);
+            bool nameFromManifest = false, foundNested = false, foundZip = false;
+            foreach (ModWorkspace.BatchEntry e in plan.Entries)
+            {
+                if (e.Name == "艾尔的马匹") nameFromManifest = true;
+                if (e.Name == "美化包B") foundNested = true;
+                if (e.IsArchive) foundZip = true;
+            }
+            Check(nameFromManifest, "batch_uses_manifest_name", "没有优先使用 manifest 里的名字");
+            Check(foundNested, "batch_finds_nested_mod", "深层嵌套的 MOD 没找到");
+            Check(foundZip, "batch_includes_archive", "压缩包没被识别");
+            Check(plan.TotalSize > 0, "batch_computes_size", "体积没算出来");
+
+            List<string> installed = new List<string>();
+            List<string> failed = new List<string>();
+            int ok = ws.ExecuteBatch(plan, installed, failed);
+            Check(ok == 3 && failed.Count == 0, "batch_install_success", "成功=" + ok + " 失败=" + failed.Count);
+            Check(File.Exists(Path.Combine(ws.ModsPath, "艾尔的马匹", "ModA.dll")), "batch_installed_folder_mod", "文件夹 MOD 没装上");
+            Check(File.Exists(Path.Combine(ws.ModsPath, "美化包B", "content.json")), "batch_installed_nested_mod", "嵌套 MOD 没装上");
+            Check(File.Exists(Path.Combine(ws.ModsPath, "ModC", "ModC.dll")), "batch_installed_archive_mod", "压缩包 MOD 没装好");
+            Check(ws.GetMeta("艾尔的马匹").Version == "1.2.0", "batch_records_manifest_version", "manifest 版本没记录");
+            Check(File.Exists(Path.Combine(src, "宠物", "ModA", "ModA.dll")), "batch_keeps_source_files", "源文件夹被动过了");
+
+            // 再扫一次：应全部识别为「已存在」，重复执行不会产生副本
+            ModWorkspace.BatchPlan again = ws.ScanBatch(src);
+            Check(again.ExistsCount == 3 && again.ToInstallCount == 0, "batch_detects_existing", "已存在=" + again.ExistsCount);
+            List<string> i2 = new List<string>();
+            List<string> f2 = new List<string>();
+            Check(ws.ExecuteBatch(again, i2, f2) == 0, "batch_second_run_noop", "重复导入产生了重复 MOD");
+            Check(ws.Scan().Count == 3, "batch_no_duplicates", "工作区 MOD 数=" + ws.Scan().Count);
+
+            // 通用游戏回退：没有 manifest 也没有压缩包 → 一级子目录当作 MOD
+            string generic = Path.Combine(_root, "generic_src");
+            Write(Path.Combine(generic, "纹理包", "a.dds"), "x");
+            Write(Path.Combine(generic, "界面包", "b.dds"), "x");
+            Check(ws.ScanBatch(generic).Entries.Count == 2, "batch_generic_fallback", "通用回退失败");
+
+            // 同一个 MOD 在两处出现（UniqueID 相同）→ 只装一次；
+            // 两个不同 MOD 用了同一个显示名 → 都装，但名字要区分开
+            string dup = Path.Combine(_root, "dup_src");
+            Write(Path.Combine(dup, "A", "manifest.json"), "{\"Name\":\"同名MOD\",\"UniqueID\":\"Test.Same\"}");
+            Write(Path.Combine(dup, "B", "manifest.json"), "{\"Name\":\"同名MOD\",\"UniqueID\":\"Test.Same\"}");
+            Write(Path.Combine(dup, "C", "manifest.json"), "{\"Name\":\"同名MOD\",\"UniqueID\":\"Test.Other\"}");
+            ModWorkspace.BatchPlan dp = ws.ScanBatch(dup);
+            ModWorkspace.BatchEntry ea = null, eb = null, ec = null;
+            foreach (ModWorkspace.BatchEntry x in dp.Entries)
+            {
+                string nm = Path.GetFileName(x.SourcePath);
+                if (nm == "A") ea = x;
+                else if (nm == "B") eb = x;
+                else if (nm == "C") ec = x;
+            }
+            Check(dp.Entries.Count == 3, "batch_dup_scan_finds_three", "找到=" + dp.Entries.Count);
+            Check(dp.ToInstallCount == 2, "batch_dedupes_by_uniqueid", "待装=" + dp.ToInstallCount);
+            Check(ea != null && eb != null && ec != null && ea.SkipReason == null && eb.SkipReason != null && ec.SkipReason == null,
+                "batch_marks_only_the_duplicate", "重复项的标记不对");
+            Check(ec != null && ea != null && ec.Name != ea.Name, "batch_disambiguates_same_name",
+                "两个同名 MOD 没有区分：" + (ea == null ? "?" : ea.Name) + " / " + (ec == null ? "?" : ec.Name));
         }
 
         private static void TestDeleteAndBackup()

@@ -59,6 +59,8 @@ namespace ModManager
         public string DeployMode { get; set; }
         /// <summary>Mods 模式下的子目录名，默认 Mods。</summary>
         public string ModsFolderName { get; set; }
+        /// <summary>上次批量导入用的文件夹，方便下次直接打开。</summary>
+        public string LastImportFolder { get; set; }
         public List<string> Order { get; set; }
         public Dictionary<string, ModMeta> Mods { get; set; }
         public DeployRecord LastDeploy { get; set; }
@@ -69,6 +71,7 @@ namespace ModManager
             GameExecutable = "";
             DeployMode = "root";
             ModsFolderName = "Mods";
+            LastImportFolder = "";
             Order = new List<string>();
             Mods = new Dictionary<string, ModMeta>(StringComparer.OrdinalIgnoreCase);
             LastDeploy = null;
@@ -180,7 +183,7 @@ namespace ModManager
 
     public static class VersionInfo
     {
-        public const string Version = "1.1.0";
+        public const string Version = "1.2.0";
         public const string AppTitle = "MOD 管理器";
     }
 

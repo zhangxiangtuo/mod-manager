@@ -16,6 +16,35 @@ namespace ModManager
     /// </summary>
     public class ModWorkspace
     {
+        /// <summary>批量导入时的一个待安装项。</summary>
+        public class BatchEntry
+        {
+            public string SourcePath;
+            public string Name;        // 计划安装成什么名字
+            public bool IsArchive;     // true = 压缩包，false = 已解压的 MOD 文件夹
+            public string SkipReason;  // 不为空表示会跳过（已存在 / 重复）
+            public string UniqueId;    // manifest 里的 UniqueID，用于去重
+            public long Size;
+            public string Version;
+        }
+
+        public class BatchPlan
+        {
+            public List<BatchEntry> Entries = new List<BatchEntry>();
+            public long TotalSize;
+            public int ExistsCount;
+
+            public int ToInstallCount
+            {
+                get
+                {
+                    int n = 0;
+                    foreach (BatchEntry e in Entries) if (e.SkipReason == null) n++;
+                    return n;
+                }
+            }
+        }
+
         public string Root { get; private set; }
         public Logger Log { get; private set; }
         public WorkspaceData Data { get; private set; }
@@ -497,6 +526,245 @@ namespace ModManager
         }
 
         // ----------------------------------------------------------- 冲突检测
+
+        // ------------------------------------------------------------ 批量导入
+
+        /// <summary>
+        /// 扫描一个文件夹，找出里面所有可以直接纳管的 MOD：
+        /// 含 manifest.json 的文件夹（星露谷/SMAPI）、压缩包（zip/7z/rar）。
+        /// 如果一个都找不到，就把这个文件夹的一级子目录当作 MOD（通用游戏用）。
+        /// </summary>
+        public BatchPlan ScanBatch(string root)
+        {
+            BatchPlan plan = new BatchPlan();
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return plan;
+            List<string> dirs = new List<string>();
+            List<string> archives = new List<string>();
+            CollectModSources(root, dirs, archives, 0);
+            if (dirs.Count == 0 && archives.Count == 0)
+            {
+                try
+                {
+                    foreach (string d in Directory.GetDirectories(root))
+                    {
+                        if (FileUtil.IsJunkDir(Path.GetFileName(d))) continue;
+                        dirs.Add(d);
+                    }
+                }
+                catch (Exception ex) { Log.Warn("扫描文件夹失败：" + ex.Message); }
+            }
+            List<string> existingUids = CollectWorkspaceUniqueIds();
+            foreach (string d in dirs) AddBatchEntry(plan, existingUids, d, false);
+            foreach (string a in archives) AddBatchEntry(plan, existingUids, a, true);
+            return plan;
+        }
+
+        /// <summary>收集工作区里已有 MOD 的 UniqueID（用来判断"这个 MOD 是不是已经装过了"）。</summary>
+        private List<string> CollectWorkspaceUniqueIds()
+        {
+            List<string> list = new List<string>();
+            foreach (string baseDir in new string[] { ModsPath, DisabledPath })
+            {
+                if (!Directory.Exists(baseDir)) continue;
+                try
+                {
+                    foreach (string dir in Directory.GetDirectories(baseDir))
+                    {
+                        string n, v, uid;
+                        ReadManifestInfo(dir, out n, out v, out uid);
+                        if (!string.IsNullOrEmpty(uid)) list.Add(uid.Trim().ToLowerInvariant());
+                    }
+                }
+                catch (Exception) { }
+            }
+            return list;
+        }
+
+        private static void CollectModSources(string root, List<string> dirs, List<string> archives, int depth)
+        {
+            if (File.Exists(Path.Combine(root, "manifest.json"))) { dirs.Add(root); return; }
+            if (depth > 4) return;
+            try
+            {
+                foreach (string sub in Directory.GetDirectories(root))
+                {
+                    if (FileUtil.IsJunkDir(Path.GetFileName(sub))) continue;
+                    if (File.Exists(Path.Combine(sub, "manifest.json"))) dirs.Add(sub);
+                    else CollectModSources(sub, dirs, archives, depth + 1);
+                }
+                foreach (string f in Directory.GetFiles(root))
+                {
+                    string ext = Path.GetExtension(f).ToLowerInvariant();
+                    if (ext == ".zip" || ext == ".7z" || ext == ".rar") archives.Add(f);
+                }
+            }
+            catch (Exception) { }
+        }
+
+        private void AddBatchEntry(BatchPlan plan, List<string> existingUids, string path, bool isArchive)
+        {
+            BatchEntry e = new BatchEntry();
+            e.SourcePath = path;
+            e.IsArchive = isArchive;
+            string baseName = isArchive ? Path.GetFileNameWithoutExtension(path) : new DirectoryInfo(path).Name;
+            string modName = null;
+            string version = null;
+            string uid = null;
+            if (!isArchive) ReadManifestInfo(path, out modName, out version, out uid);
+            e.Version = version;
+            e.UniqueId = uid;
+
+            string primary = FileUtil.SanitizeName(string.IsNullOrEmpty(modName) ? baseName : modName);
+            string secondary = FileUtil.SanitizeName(baseName);
+
+            // 判断是否要跳过：同一个 UniqueID / 已存在的同名 MOD
+            if (!isArchive && !string.IsNullOrEmpty(uid))
+            {
+                if (existingUids.Contains(uid.Trim().ToLowerInvariant()))
+                    e.SkipReason = "工作区里已经有同一个 MOD";
+                else if (PlanHasUniqueId(plan, uid))
+                    e.SkipReason = "和前面某个 MOD 重复";
+            }
+            if (e.SkipReason == null && (ExistsInWorkspace(primary) || (secondary != primary && ExistsInWorkspace(secondary))))
+                e.SkipReason = "工作区里已有同名 MOD";
+
+            if (e.SkipReason != null)
+            {
+                e.Name = primary;
+                plan.ExistsCount++;
+            }
+            else
+            {
+                string unique = primary;
+                if (PlanHasName(plan, unique))
+                {
+                    // 重名（比如两个 MOD 的 manifest 名字一样）→ 用文件夹名区分
+                    if (secondary != primary && !PlanHasName(plan, secondary)) unique = secondary;
+                    else
+                    {
+                        int i = 2;
+                        while (PlanHasName(plan, unique + " (" + i.ToString() + ")")) i++;
+                        unique = unique + " (" + i.ToString() + ")";
+                    }
+                }
+                e.Name = unique;
+            }
+            if (isArchive)
+            {
+                try { e.Size = new FileInfo(path).Length; }
+                catch (Exception) { }
+            }
+            else
+            {
+                int fc; long size;
+                FileUtil.MeasureDirectory(path, out fc, out size);
+                e.Size = size;
+            }
+            plan.TotalSize += e.Size;
+            plan.Entries.Add(e);
+        }
+
+        private bool ExistsInWorkspace(string name)
+        {
+            return Directory.Exists(Path.Combine(ModsPath, name)) || Directory.Exists(Path.Combine(DisabledPath, name));
+        }
+
+        private static bool PlanHasUniqueId(BatchPlan plan, string uid)
+        {
+            if (string.IsNullOrEmpty(uid)) return false;
+            foreach (BatchEntry e in plan.Entries)
+                if (!string.IsNullOrEmpty(e.UniqueId) && string.Equals(e.UniqueId.Trim(), uid.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
+        }
+
+        private static bool PlanHasName(BatchPlan plan, string name)
+        {
+            foreach (BatchEntry e in plan.Entries)
+                if (string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        /// <summary>读取 MOD 的 manifest.json，取出显示名、版本号和 UniqueID。</summary>
+        private static void ReadManifestInfo(string folder, out string name, out string version)
+        {
+            string uid;
+            ReadManifestInfo(folder, out name, out version, out uid);
+        }
+
+        private static void ReadManifestInfo(string folder, out string name, out string version, out string uniqueId)
+        {
+            name = null;
+            version = null;
+            uniqueId = null;
+            try
+            {
+                string file = Path.Combine(folder, "manifest.json");
+                if (!File.Exists(file)) return;
+                ManifestInfo info = Json.Load<ManifestInfo>(file);
+                if (info == null) return;
+                name = info.Name;
+                version = info.Version;
+                uniqueId = info.UniqueID;
+            }
+            catch (Exception) { }
+        }
+
+        private class ManifestInfo
+        {
+            public string Name { get; set; }
+            public string Version { get; set; }
+            public string UniqueID { get; set; }
+        }
+
+        /// <summary>按计划批量安装（已存在的自动跳过）。</summary>
+        public int ExecuteBatch(BatchPlan plan, List<string> installed, List<string> failed)
+        {
+            int ok = 0;
+            foreach (BatchEntry e in plan.Entries)
+            {
+                if (e.SkipReason != null) continue;
+                try
+                {
+                    string name = e.IsArchive ? Install(e.SourcePath) : InstallModFolder(e.SourcePath, e.Name);
+                    installed.Add(name);
+                    ok++;
+                }
+                catch (Exception ex)
+                {
+                    failed.Add(e.Name + "：" + ex.Message);
+                    Log.Error("导入失败 " + e.Name + "：" + ex.Message);
+                }
+            }
+            return ok;
+        }
+
+        /// <summary>把已经解压好的 MOD 文件夹复制进工作区。</summary>
+        public string InstallModFolder(string folderPath, string preferredName)
+        {
+            if (!Directory.Exists(folderPath)) throw new DirectoryNotFoundException("找不到文件夹：" + folderPath);
+            string modName = null;
+            string version = null;
+            ReadManifestInfo(folderPath, out modName, out version);
+            string want = string.IsNullOrEmpty(preferredName)
+                ? (string.IsNullOrEmpty(modName) ? new DirectoryInfo(folderPath).Name : modName)
+                : preferredName;
+            string name = UniqueName(FileUtil.SanitizeName(want));
+            string dest = Path.Combine(ModsPath, name);
+            FileUtil.CopyDirectory(folderPath, dest);
+            if (Directory.GetFileSystemEntries(dest).Length == 0)
+            {
+                FileUtil.DeleteDirectorySafe(dest);
+                throw new InvalidDataException("文件夹是空的。");
+            }
+            ModMeta meta = GetMeta(name);
+            meta.InstalledAt = Json.Now();
+            meta.Source = folderPath;
+            if (!string.IsNullOrEmpty(version)) meta.Version = version;
+            if (!Data.Order.Contains(name)) Data.Order.Add(name);
+            Save();
+            return name;
+        }
 
         /// <summary>检测已启用 MOD 之间重复的文件（后面的 MOD 会覆盖前面的）。</summary>
         public List<ConflictGroup> FindConflicts(List<ModInfo> mods, List<ModInfo> orderedEnabled)

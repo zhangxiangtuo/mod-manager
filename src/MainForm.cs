@@ -176,42 +176,57 @@ namespace ModManager
             toolbar.BackColor = UiKit.Card;
             toolbar.Paint += delegate(object s, PaintEventArgs e) { DrawBottomLine(e.Graphics, toolbar.ClientSize.Width, toolbar.ClientSize.Height); };
 
-            _btnInstall = UiKit.MakeButton("＋ 安装 MOD", 116, 30, true);
+            _btnInstall = UiKit.MakeButton("＋ 安装 MOD", 104, 30, true);
             _btnInstall.Location = new Point(14, 9);
             _btnInstall.Click += delegate { InstallFromDialog(); };
-            _btnEnable = UiKit.MakeButton("启用", 72, 30);
-            _btnEnable.Location = new Point(138, 9);
+
+            Button btnBatch = UiKit.MakeButton("批量导入", 88, 30);
+            btnBatch.Location = new Point(122, 9);
+            btnBatch.Click += delegate { ImportBatchDialog(); };
+
+            _btnEnable = UiKit.MakeButton("启用", 58, 30);
+            _btnEnable.Location = new Point(216, 9);
             _btnEnable.Click += delegate { ToggleSelected(true); };
-            _btnDisable = UiKit.MakeButton("禁用", 72, 30);
-            _btnDisable.Location = new Point(216, 9);
+            _btnDisable = UiKit.MakeButton("禁用", 58, 30);
+            _btnDisable.Location = new Point(278, 9);
             _btnDisable.Click += delegate { ToggleSelected(false); };
-            _btnUp = UiKit.MakeButton("上移", 64, 30);
-            _btnUp.Location = new Point(294, 9);
+            _btnUp = UiKit.MakeButton("上移", 56, 30);
+            _btnUp.Location = new Point(340, 9);
             _btnUp.Click += delegate { MoveSelected(-1); };
-            _btnDown = UiKit.MakeButton("下移", 64, 30);
-            _btnDown.Location = new Point(364, 9);
+            _btnDown = UiKit.MakeButton("下移", 56, 30);
+            _btnDown.Location = new Point(400, 9);
             _btnDown.Click += delegate { MoveSelected(1); };
-            _btnRename = UiKit.MakeButton("重命名", 76, 30);
-            _btnRename.Location = new Point(434, 9);
+            _btnRename = UiKit.MakeButton("重命名", 68, 30);
+            _btnRename.Location = new Point(460, 9);
             _btnRename.Click += delegate { RenameSelected(); };
-            _btnDelete = UiKit.MakeButton("删除", 68, 30);
-            _btnDelete.Location = new Point(516, 9);
+            _btnDelete = UiKit.MakeButton("删除", 58, 30);
+            _btnDelete.Location = new Point(532, 9);
             _btnDelete.ForeColor = UiKit.Danger;
             _btnDelete.Click += delegate { DeleteSelected(); };
 
             Label lblSearch = UiKit.MakeFieldLabel("搜索");
             lblSearch.TextAlign = ContentAlignment.MiddleRight;
-            lblSearch.Size = new Size(40, 30);
-            lblSearch.Location = new Point(614, 9);
+            lblSearch.Size = new Size(34, 30);
+            lblSearch.Location = new Point(647, 9);
             lblSearch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
             _txtSearch = UiKit.MakeTextBox(false);
-            _txtSearch.Location = new Point(660, 10);
-            _txtSearch.Size = new Size(180, 26);
+            _txtSearch.Location = new Point(681, 10);
+            _txtSearch.Size = new Size(138, 26);
             _txtSearch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             _txtSearch.TextChanged += delegate { FillList(SelectedName()); };
 
+            // 窗口太窄时收起搜索框，避免和左边的按钮挤在一起
+            toolbar.Resize += delegate
+            {
+                bool show = toolbar.ClientSize.Width >= 780;
+                lblSearch.Visible = show;
+                _txtSearch.Visible = show;
+                if (!show && _txtSearch.Text.Length > 0) _txtSearch.Text = "";
+            };
+
             toolbar.Controls.Add(_btnInstall);
+            toolbar.Controls.Add(btnBatch);
             toolbar.Controls.Add(_btnEnable);
             toolbar.Controls.Add(_btnDisable);
             toolbar.Controls.Add(_btnUp);
@@ -596,7 +611,7 @@ namespace ModManager
             Label sub = new Label();
             sub.Text = "工作区用来存放你的 MOD，程序会在其中自动建立：\r\n" +
                        "mods（已启用） · disabled（已禁用） · backup（备份）\r\n\r\n" +
-                       "打开工作区后，可以直接把 zip / 7z / rar 压缩包或已解压的文件夹拖进窗口安装。";
+                       "打开工作区后，可以把压缩包、已解压的 MOD 文件夹，甚至整个分类文件夹拖进窗口安装。";
             sub.Font = UiKit.Ui(9.5F);
             sub.ForeColor = UiKit.SubText;
             sub.AutoSize = false;
@@ -829,8 +844,10 @@ namespace ModManager
             // 关闭前先清空列表项，避免 WinForms 在销毁 ListView 时抛出空引用（已知渲染/销毁顺序问题）
             try { if (_lv != null) _lv.Items.Clear(); }
             catch (Exception) { }
-            _settings.WindowWidth = this.WindowState == FormWindowState.Normal ? this.Width : _settings.WindowWidth;
-            _settings.WindowHeight = this.WindowState == FormWindowState.Normal ? this.Height : _settings.WindowHeight;
+            // 注意：存的是"客户区"尺寸，恢复时也按"客户区"还原，
+            // 否则每次启动都会把窗口边框算进去，窗口会越开越大。
+            _settings.WindowWidth = this.WindowState == FormWindowState.Normal ? this.ClientSize.Width : _settings.WindowWidth;
+            _settings.WindowHeight = this.WindowState == FormWindowState.Normal ? this.ClientSize.Height : _settings.WindowHeight;
             _settings.WindowMaximized = this.WindowState == FormWindowState.Maximized;
             SettingsStore.Save(_settings);
         }
@@ -1214,6 +1231,8 @@ namespace ModManager
                 menu.Items.Add("导入游戏 Mods 目录中的现有 MOD", null, delegate { ImportGameMods(); });
             }
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("批量导入文件夹里的所有 MOD…", null, delegate { ImportBatchDialog(); });
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("删除", null, delegate { DeleteSelected(); });
             menu.Show(_lv, e.Location);
         }
@@ -1238,6 +1257,94 @@ namespace ModManager
                 if (d.ShowDialog(this) != DialogResult.OK) return;
                 InstallSources(d.FileNames);
             }
+        }
+
+        /// <summary>选择一个文件夹批量导入（里面是一堆 MOD 文件夹、还是一堆压缩包都能识别）。</summary>
+        private void ImportBatchDialog()
+        {
+            if (_ws == null) { NeedWorkspace(); return; }
+            using (FolderBrowserDialog d = new FolderBrowserDialog())
+            {
+                d.Description = "选择 MOD 所在文件夹：可以是一堆解压好的 MOD 文件夹，也可以是一堆压缩包，工具会自动找出里面所有 MOD";
+                string last = _ws.Data.LastImportFolder;
+                if (!string.IsNullOrEmpty(last) && Directory.Exists(last)) d.SelectedPath = last;
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                _ws.Data.LastImportFolder = d.SelectedPath;
+                _ws.Save();
+                ImportBatch(d.SelectedPath, true);
+            }
+        }
+
+        /// <summary>扫描文件夹 → 确认 → 批量复制进工作区。</summary>
+        private void ImportBatch(string root, bool alwaysConfirm)
+        {
+            if (_ws == null) { NeedWorkspace(); return; }
+            Cursor old = this.Cursor;
+            this.Cursor = Cursors.WaitCursor;
+            ModWorkspace.BatchPlan plan;
+            try { plan = _ws.ScanBatch(root); }
+            catch (Exception ex)
+            {
+                this.Cursor = old;
+                _log.Error("扫描文件夹失败：" + ex.Message);
+                MessageBox.Show(this, "扫描文件夹失败：\r\n" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            finally { this.Cursor = old; }
+
+            if (plan.Entries.Count == 0)
+            {
+                ShowInfo("在 " + root + " 里没有找到可导入的 MOD。\r\n\r\n识别规则：\r\n" +
+                    "· 含 manifest.json 的文件夹（星露谷 MOD）\r\n· zip / 7z / rar 压缩包\r\n" +
+                    "· 如果都没有，就把一级子文件夹当作 MOD", "没有找到 MOD");
+                return;
+            }
+
+            if (alwaysConfirm || plan.Entries.Count > 1)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append("在 ").Append(root).Append(" 里找到 ").Append(plan.Entries.Count).Append(" 个 MOD");
+                sb.Append("，合计约 ").Append(FileUtil.FormatSize(plan.TotalSize)).Append("。\r\n\r\n");
+                int shown = 0;
+                foreach (ModWorkspace.BatchEntry e in plan.Entries)
+                {
+                    if (shown >= 10)
+                    {
+                        sb.Append("…… 其余 ").Append(plan.Entries.Count - shown).Append(" 个\r\n");
+                        break;
+                    }
+                    sb.Append("· ").Append(e.Name);
+                    if (e.SkipReason != null) sb.Append("　（").Append(e.SkipReason).Append("，跳过）");
+                    else if (!string.IsNullOrEmpty(e.Version)) sb.Append("　v").Append(e.Version);
+                    sb.Append("\r\n");
+                    shown++;
+                }
+                sb.Append("\r\n会把它们复制到工作区：").Append(_ws.Root).Append("\\mods\r\n");
+                sb.Append("（原来的文件夹和压缩包不会被移动或删除）\r\n\r\n是否继续？");
+                if (!Confirm(sb.ToString(), "批量导入 MOD")) return;
+            }
+
+            List<string> installed = new List<string>();
+            List<string> failed = new List<string>();
+            old = this.Cursor;
+            this.Cursor = Cursors.WaitCursor;
+            try { _ws.ExecuteBatch(plan, installed, failed); }
+            finally { this.Cursor = old; }
+
+            _log.Ok("批量导入：成功 " + installed.Count + " 个，跳过（已存在）" + plan.ExistsCount + " 个，失败 " + failed.Count + " 个。");
+            if (installed.Count > 0)
+                _log.Info("  新增 MOD：" + UiKit.Ellipsis(string.Join("、", installed.ToArray()), 160));
+            RefreshMods(true);
+            if (installed.Count > 0) SelectByName(installed[0]);
+
+            StringBuilder r = new StringBuilder();
+            r.Append("导入完成。\r\n\r\n新增：").Append(installed.Count).Append(" 个 MOD\r\n跳过（工作区已有）：")
+                .Append(plan.ExistsCount).Append(" 个");
+            if (failed.Count > 0)
+                r.Append("\r\n失败：").Append(failed.Count).Append(" 个\r\n").Append(UiKit.Ellipsis(string.Join("\r\n", failed.ToArray()), 300));
+            r.Append("\r\n\r\n新导入的 MOD 默认都是「已启用」。确认没问题后点「部署到游戏目录」装进游戏；" +
+                "不想用的取消勾选再部署即可。");
+            ShowInfo(r.ToString(), "批量导入结果");
         }
 
         private void InstallSources(string[] paths)
@@ -1293,16 +1400,19 @@ namespace ModManager
             if (_ws == null) { NeedWorkspace(); return; }
             string[] files = e.Data.GetData(DataFormats.FileDrop) as string[];
             if (files == null || files.Length == 0) return;
-            List<string> usable = new List<string>();
+            List<string> archives = new List<string>();
+            List<string> folders = new List<string>();
             List<string> skipped = new List<string>();
             foreach (string f in files)
             {
-                if (_ws.IsSupportedSource(f)) usable.Add(f);
+                if (Directory.Exists(f)) folders.Add(f);
+                else if (_ws.IsSupportedSource(f)) archives.Add(f);
                 else skipped.Add(Path.GetFileName(f.TrimEnd('\\')));
             }
             if (skipped.Count > 0)
                 _log.Warn("已跳过不支持的项目：" + string.Join("、", skipped.ToArray()) + "（支持 zip / 7z / rar 或文件夹）");
-            if (usable.Count > 0) InstallSources(usable.ToArray());
+            if (archives.Count > 0) InstallSources(archives.ToArray());
+            foreach (string f in folders) ImportBatch(f, false);
         }
 
         private void SetEnabledOnDisk(string[] names, bool enabled)
@@ -1804,7 +1914,12 @@ namespace ModManager
                 "二、安装 MOD\r\n" +
                 "  1. 点「＋ 安装 MOD」选择压缩包（支持 zip；安装了 7-Zip 后支持 7z / rar）；\r\n" +
                 "  2. 或直接把压缩包 / 已解压的文件夹拖到窗口里；\r\n" +
-                "  3. 安装时会自动去掉 __MACOSX、Thumbs.db 等垃圾文件，\r\n" +
+                "  3. 一堆 MOD 想一次导入？点「批量导入」选一个文件夹即可：\r\n" +
+                "     · 文件夹里是解压好的 MOD（含 manifest.json）→ 每个都装成一个 MOD；\r\n" +
+                "     · 文件夹里是一堆压缩包 → 逐个解压安装；\r\n" +
+                "     · 层层分类的文件夹（如 宠物\\xxx、美化\\yyy）也能一次全部找出来；\r\n" +
+                "     已经是同一个 MOD 的会自动跳过，不会重复安装。\r\n" +
+                "  4. 安装时会自动去掉 __MACOSX、Thumbs.db 等垃圾文件，\r\n" +
                 "     如果压缩包只有一层外壳文件夹也会自动打开。\r\n\r\n" +
                 "三、启用 / 禁用\r\n" +
                 "  勾选列表前的复选框即可启用，取消勾选即禁用。\r\n" +
@@ -1948,6 +2063,27 @@ namespace ModManager
         public void TestInstall(string path)
         {
             InstallSources(new string[] { path });
+        }
+
+        /// <summary>自检：只扫描不安装，把结果写进日志（用于验证批量导入的识别结果）。</summary>
+        public void TestScan(string folder)
+        {
+            ModWorkspace.BatchPlan plan = _ws.ScanBatch(folder);
+            _log.Info("扫描 " + folder + "：共找到 " + plan.Entries.Count + " 个，合计 " +
+                FileUtil.FormatSize(plan.TotalSize) + "；将导入 " + plan.ToInstallCount + " 个，跳过 " + plan.ExistsCount + " 个。");
+            foreach (ModWorkspace.BatchEntry e in plan.Entries)
+            {
+                _log.Info("   " + (e.SkipReason == null ? "[导入] " : "[跳过] ") + e.Name +
+                    (e.IsArchive ? "（压缩包）" : "") +
+                    (string.IsNullOrEmpty(e.Version) ? "" : "  v" + e.Version) +
+                    (e.SkipReason == null ? "" : "  — " + e.SkipReason));
+            }
+        }
+
+        /// <summary>自检：直接执行批量导入（不再弹确认框）。</summary>
+        public void TestImportBatch(string folder)
+        {
+            ImportBatch(folder, true);
         }
 
         public void TestDeploy()

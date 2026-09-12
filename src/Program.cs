@@ -97,6 +97,10 @@ namespace ModManager
             if (toggle != null) form.TestToggleCheck(toggle);
             string install = ArgValue(args, "--install");
             if (install != null) form.TestInstall(install);
+            string scan = ArgValue(args, "--scan");
+            if (scan != null) form.TestScan(scan);
+            string import = ArgValue(args, "--import");
+            if (import != null) form.TestImportBatch(import);
             if (ArgValue(args, "--deploy") != null) form.TestDeploy();
             if (ArgValue(args, "--undo") != null) form.TestUndo();
             Application.DoEvents();

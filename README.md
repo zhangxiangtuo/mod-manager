@@ -5,7 +5,7 @@
   <img alt=".net" src="https://img.shields.io/badge/.NET%20Framework-4.8-512BD4">
   <img alt="size" src="https://img.shields.io/badge/exe-about%20130%20KB-success">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
-  <img alt="tests" src="https://img.shields.io/badge/tests-59%20passed-brightgreen">
+  <img alt="tests" src="https://img.shields.io/badge/tests-79%20passed-brightgreen">
   <a href="https://github.com/zhangxiangtuo/mod-manager/actions/workflows/build.yml"><img alt="build" src="https://github.com/zhangxiangtuo/mod-manager/actions/workflows/build.yml/badge.svg"></a>
 </p>
 
@@ -29,6 +29,7 @@
   | 游戏根目录（通用） | 贴图 / 模型替换类游戏 | 按加载顺序把 MOD 里的文件合并复制到游戏根目录，同名文件按顺序覆盖 |
 
 - **安装 MOD**：支持 `.zip`（内置解压）、`.7z` / `.rar`（调用系统 7-Zip / WinRAR），也可以直接把文件夹拖进窗口；自动清理 `__MACOSX`、`.DS_Store`、`Thumbs.db` 等垃圾文件；自动去掉压缩包多余的包装文件夹；同名 MOD 自动改名不覆盖。
+- **批量导入**：选一个文件夹（或直接拖进来），自动找出里面所有 MOD 并一次装完 —— 一堆解压好的 MOD 文件夹、按分类层层嵌套的文件夹、一堆压缩包都能识别；按 `UniqueID` 自动去重，已经装过的不会重复导入。
 - **启用 / 禁用**：勾选框一键切换（在 `mods` / `disabled` 之间移动文件夹，不动文件内容），支持多选、空格键、右键菜单。
 - **加载顺序**：上移 / 下移调整优先级，靠后的 MOD 覆盖靠前的。
 - **检查**：通用模式做文件级冲突检测（列出重复文件和最终生效的 MOD）；Mods 模式检查每个 MOD 是否含 `manifest.json`、部署会覆盖哪些已有文件夹。
