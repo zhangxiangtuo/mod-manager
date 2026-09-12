@@ -1,0 +1,15 @@
+# 统一换行符，避免跨平台差异
+* text=auto eol=lf
+
+*.cs    text diff=csharp
+*.ps1   text
+*.md    text
+*.json  text
+*.manifest text
+
+# 二进制文件
+*.exe   binary
+*.dll   binary
+*.ico   binary
+*.png   binary
+*.zip   binary

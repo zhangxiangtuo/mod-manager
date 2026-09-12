@@ -1,0 +1,35 @@
+name: Build & Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 编译（使用系统自带的 .NET Framework 编译器）
+        shell: powershell
+        run: .\build\build.ps1 -OutDir . -BuildTests
+
+      - name: 运行自动化测试（59 项）
+        shell: powershell
+        run: |
+          .\work\CoreTests.exe | Tee-Object -FilePath test-output.txt
+          if ($LASTEXITCODE -ne 0) { Write-Error "测试未通过"; exit 1 }
+
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: MOD管理器
+          path: MOD管理器.exe
+
+      - name: 上传测试日志
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test-output.txt
