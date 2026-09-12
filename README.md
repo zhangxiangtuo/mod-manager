@@ -6,6 +6,7 @@
   <img alt="size" src="https://img.shields.io/badge/exe-about%20130%20KB-success">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
   <img alt="tests" src="https://img.shields.io/badge/tests-59%20passed-brightgreen">
+  <a href="https://github.com/zhangxiangtuo/mod-manager/actions/workflows/build.yml"><img alt="build" src="https://github.com/zhangxiangtuo/mod-manager/actions/workflows/build.yml/badge.svg"></a>
 </p>
 
 一个 **Windows 上的简体中文图形界面 MOD 管理工具**：安装、启用/禁用、排序、检查、一键部署到游戏，并且随时能一键还原。
