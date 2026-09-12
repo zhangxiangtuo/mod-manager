@@ -1,4 +1,4 @@
-name: Build & Test
+﻿name: Build & Test
 
 on:
   push:
@@ -9,27 +9,28 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: 检出代码
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 编译（使用系统自带的 .NET Framework 编译器）
+      # 只依赖系统自带的 .NET Framework 编译器（csc.exe），无需 SDK
+      - name: Compile with in-box csc
         shell: powershell
-        run: .\build\build.ps1 -OutDir . -BuildTests
+        run: .\build\build.ps1 -OutDir .\outputs -BuildTests
 
-      - name: 运行自动化测试（59 项）
+      - name: Run core tests (59 cases)
         shell: powershell
         run: |
-          .\work\CoreTests.exe | Tee-Object -FilePath test-output.txt
-          if ($LASTEXITCODE -ne 0) { Write-Error "测试未通过"; exit 1 }
+          .\work\CoreTests.exe 2>&1 | Tee-Object -FilePath .\work\test-output.txt
+          exit $LASTEXITCODE
 
-      - name: 上传编译产物
+      - name: Upload built exe
         uses: actions/upload-artifact@v4
         with:
-          name: MOD管理器
-          path: MOD管理器.exe
+          name: MODManager-ci-build
+          path: outputs/*.exe
 
-      - name: 上传测试日志
+      - name: Upload test log
         uses: actions/upload-artifact@v4
         with:
-          name: test-output
-          path: test-output.txt
+          name: core-tests-log
+          path: work/test-output.txt

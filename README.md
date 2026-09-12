@@ -41,7 +41,7 @@
 
 ## 快速开始（普通用户）
 
-1. 下载 [`MOD管理器.exe`](MOD管理器.exe)（就在本仓库根目录）。
+1. 下载 [`MOD管理器.exe`](MOD管理器.exe)（在本仓库根目录），或到 [Releases](https://github.com/zhangxiangtuo/mod-manager/releases) 页面下载。
 2. 双击运行。如果 Windows 弹出「Windows 已保护你的电脑」，点 **更多信息 → 仍要运行**（程序未购买代码签名，属正常提示）。
 3. 点「新建工作区」选一个空文件夹 → 把 MOD 压缩包**拖进窗口** → 点「选择目录」指定游戏目录 → 点「部署到游戏目录」。
 

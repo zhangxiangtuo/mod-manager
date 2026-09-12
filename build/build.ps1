@@ -59,6 +59,8 @@ if ($BuildTests) {
         $testFile
     )
     $testExe = Join-Path $root "work\CoreTests.exe"
+    $testDir = Split-Path $testExe -Parent
+    if (-not (Test-Path $testDir)) { New-Item -ItemType Directory -Path $testDir -Force | Out-Null }
     $testArgs = @("/nologo", "/target:exe", "/platform:anycpu", "/codepage:65001")
     $testArgs += ("/out:" + $testExe)
     foreach ($r in @("System.dll", "System.Core.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "System.Web.Extensions.dll")) {
